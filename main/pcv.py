@@ -36,6 +36,8 @@ def main():
             # script_status_update_buddy("pcvmurcor", 'active', 'running')
 
             orders_found = init.checkorder_mail()
+            print(orders_found)
+            
 
             if orders_found:
                 for key, value in orders_found.items():
@@ -102,7 +104,8 @@ def main():
 
                                 elif order_type == "counter_request":
                                     try:
-                                        response_link, avail_order = init.extract_response_link_and_order([mail_content, subject])
+                                        response_link, avail_order = init.extract_counter_response_link_and_order([mail_content, subject])
+                                        
                                         if avail_order:
                                             avail_order, due, _ = init.criteria_check(avail_order)
                                             print(f"Countering with: ${avail_order['price']} for Order ID: {avail_order['order_id']}")

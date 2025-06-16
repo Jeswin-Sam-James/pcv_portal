@@ -39,9 +39,11 @@ class pcv:
             # Search without UNSEEN: you only want a specific mail, read or unread
             retcode, data = conn.search(
                 None,
-                'OR SUBJECT "new BPO order from PCV Murcor" SUBJECT "Fee Quote Request on Order"'
+                '(UNSEEN FROM "@pcvmurcor.com" OR SUBJECT "new BPO order from PCV Murcor" SUBJECT "Fee Quote Request on Order")'
             )
+
             print("The status is", retcode)
+
 
             str_list = list(filter(None, data[0].decode().split(' ')))
             logging.info('No: of unread messages Applied valuation: {}'.format(len(str_list)))
@@ -57,7 +59,8 @@ class pcv:
                         for response_part in data:
                             if isinstance(response_part, tuple):
                                 msg = email.message_from_string(response_part[1].decode('utf-8'))
-                                to_address = "littlerockbpo@bangrealty.com"
+                                # to_address = "littlerockbpo@bangrealty.com"
+                                to_address =  msg['To']
                         
                                 # Get email content
                                 mail_content = ""
@@ -106,8 +109,6 @@ class pcv:
             
             exception_mail_send(self.portal_name, self.portal_name, ex)
             logging.info(f"An exception while checking for new order mail notification {ex}")
-            
-
 
 
     def extract_response_link_and_order(self, value):
@@ -172,21 +173,57 @@ class pcv:
             logging.error(f'An exception in the function "extract_response_link_and_order()": {e}')
             return None, None
 
-    def counter_check_ordertype(self, avail_order, common_db_data):
-        
+
+    def extract_counter_response_link_and_order(self, value):
         try:
-            
-            order_type = avail_order['order_type'].lower()
-            
-            donot_accept_ordertypes = [x.lower().strip() for x in self.client_data['donot_accept_ordertypes'].split(',')]  
-            
+            mail_body = value[0]
+            subject = value[1]
+            mail_content_soup = BeautifulSoup(mail_body, 'html.parser')
+            response_link = None
+            for a in mail_content_soup.find_all('a', href=True):
+                if 'dashboard.pcvmurcor.com' in a['href'] and 'FeeQuote.aspx' in a['href']:
+                    response_link = a['href']
+                    break
+            order_id_match = re.search(r'Order\s*#[:\s]*(\d+)', mail_body, re.IGNORECASE)
+            order_id = order_id_match.group(1) if order_id_match else ''
+            product_match = re.search(r'Product Name[:\s]*(.*)', mail_body)
+            product_name = product_match.group(1).strip() if product_match else ''
+            address_match = re.search(r'Property Address[:\s]*(.*)', mail_body)
+            address = address_match.group(1).strip() if address_match else ''
+            zipcode = ''
+            if address:
+                try:
+                    zipcode = address.split(',')[-1].strip().split()[-1]
+                except:
+                    zipcode = ''
+            # Default due date -> temparary
+            due = (datetime.datetime.now() + datetime.timedelta(days=2)).strftime('%d-%m-%Y')
+            avail_order = {
+                'address': address,
+                'zipcode': zipcode,
+                'order_type': product_name,
+                'due': due,
+                'order_id': order_id
+            }
+            if response_link:
+                return response_link, avail_order
+            else:
+                logging.warning("Counter: Response link not found.")
+                return None, None
+        except Exception as e:
+            logging.error(f'An exception in "extract_counter_response_link_and_order()": {e}')
+            return None, None
+
+
+    def counter_check_ordertype(self, avail_order, common_db_data):
+        try:
+            order_type = avail_order['order_type'].lower()  
+            donot_accept_ordertypes = [x.lower().strip() for x in self.client_data['donot_accept_ordertypes'].split(',')]        
             if self.client_data['order_quote_ordertypes']:
                 client_quote_order_types = [x.strip() for x in self.client_data['order_quote_ordertypes'].split(',')]
             else: 
                 client_quote_order_types = ''
             
-            
-            #quote exterior order type
             if common_db_data['exterior_ordertypes']:    
                 exterior_ordertypes = [x.lower().strip() for x in common_db_data['exterior_ordertypes'].split(',')]
             else: 
