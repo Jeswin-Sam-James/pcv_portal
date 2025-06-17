@@ -882,6 +882,7 @@ def inspectionTypeCheck(ordertype, common_db_data)->bool:
         return False
     except Exception as ex:
         logging.info(ex)
+        
 def zipcode_check(zipcode,ordertype,orderfee,client_data,portal_name):
     common_db_data=cursorexec("order_updation",'SELECT',"""SELECT * FROM `common_data_acceptance` """)
     fee_portal,zipcodedb,typecheck_flag=check_ordertype(ordertype,orderfee,common_db_data,client_data,portal_name)

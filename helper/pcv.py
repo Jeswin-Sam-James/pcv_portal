@@ -12,7 +12,7 @@ from bs4 import BeautifulSoup
 # from scrapy.http import HtmlResponse
 from stdlib.creds import email_cred
 from datetime import date, timedelta
-from stdlib.utility import cursorexec,ignored_message,exception_mail_send,client_mail_send,check_ordertype,criteria_with_params,login_into_gmail
+from stdlib.utility import cursorexec,ignored_message,exception_mail_send,client_mail_send,check_ordertype,criteria_with_params,zipcode_check,login_into_gmail
 import html
 import requests
 from email.utils import parseaddr
@@ -278,41 +278,84 @@ class pcv:
             logging.exception(f'An exception occured while checking quote order type : {e}')
             return None, None, False
         
-    def criteria_check(self, avail_order):   
-            
+    def criteria_check_new_order(self, avail_order):
         try:
-            diff = 2
-            fee_portal = 0
-            if 'price' not in avail_order:
-                avail_order['price'] = fee_portal
+            due_text = str(avail_order['due'])  # Ex: "05/31/2025 5:00 PM"
+            try:
+                due_datetime = datetime.datetime.strptime(due_text, "%m/%d/%Y %I:%M %p")
+            except ValueError:
+                due_datetime = datetime.datetime.strptime(due_text.split(" ")[0], "%m/%d/%Y")
+            zone = timezone('EST')
+            today_str = datetime.datetime.now(zone).strftime("%m/%d/%Y")
+            today = datetime.datetime.strptime(today_str, "%m/%d/%Y")
+            diff = (due_datetime - today).days
+            logging.info(f"Days until due: {diff}")
 
-            common_db_data = cursorexec("order_updation",'SELECT',"""SELECT * FROM `common_data_acceptance` """)
-            print(common_db_data)
-                            
-            counter_price_in_db, zipcode_in_db, typecheck_flag  = self.counter_check_ordertype(avail_order, common_db_data)
+            common_db_data = cursorexec("order_updation", 'SELECT', "SELECT * FROM `common_data_acceptance`")
+
+            price_in_db, zipcode_in_db, typecheck_flag = check_ordertype(
+                avail_order['order_type'], avail_order.get('price', 0),
+                common_db_data, self.client_data, self.portal_name
+            )
+
             if typecheck_flag:
-                
-                if 'price' in  avail_order and counter_price_in_db >= int(float(avail_order['price'])):
-                    avail_order['price'] = counter_price_in_db     
-                    
-                elif 'price' in  avail_order and counter_price_in_db <= int(float(avail_order['price'])):
-                    avail_order['price'] = avail_order['price'] 
-                else:
-                    avail_order['price'] = counter_price_in_db
-                        
-                zipcode_in_db = {zipcode: True for zipcode in zipcode_in_db.split(',')}
-                due, fee_portal, flag = criteria_with_params(counter_price_in_db, zipcode_in_db, avail_order['price'], diff, avail_order['zipcode'], self.client_data, avail_order['due'], common_db_data, self.portal_name,avail_order['address'])
+                zipcode_dict = {zipcode.strip(): True for zipcode in zipcode_in_db.split(',')}
+                due_str = due_datetime.strftime('%d-%m-%Y')  
+                avail_order['due'] = due_str  
+                due, fee_portal, flag = criteria_with_params(
+                    price_in_db, zipcode_dict, avail_order['price'], diff,
+                    avail_order['zipcode'], self.client_data, due_str,
+                    common_db_data, self.portal_name, avail_order['address']
+                )
                 return avail_order, due, flag
-            
             else:
-                
-                logging.info(f"Order Type Not Mapped in Database")
+                logging.info("Order Type Not Mapped in Database")
                 ignored_msg = "Order Type not satisfied"
                 return avail_order, ignored_msg, typecheck_flag
 
         except Exception as ex:
-            # exception_mail_send(self.portal_name, self.client_data['Client_name'], ex)
-            logging.info(f"An exception occured in the function 'Criteria_check()' : {ex}") 
+            exception_mail_send(self.portal_name, self.client_data['Client_name'], ex)
+            logging.exception("Exception in PCV criteria_check")
+            return avail_order, "Exception", False
+
+
+    def criteria_check_order_quote(self, avail_order):
+        try:
+            due_date = (datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%m/%d/%Y %I:%M %p")
+            avail_order['due'] = due_date
+            diff = 1
+            common_db_data = cursorexec("order_updation", "SELECT", "SELECT * FROM `common_data_acceptance`")
+            
+            requesting_fee, zipcode_in_db, typecheck_flag = self.counter_check_ordertype(avail_order, common_db_data)
+            
+            if not typecheck_flag:
+                logging.info("Order Type not valid for quote.")
+                return avail_order, due_date, False
+            
+            avail_order['price'] = requesting_fee
+            
+            zipcode_in_db={zipcode: True for zipcode in zipcode_in_db.split(',')}
+            due,fee_portal,flag=criteria_with_params(requesting_fee,zipcode_in_db,requesting_fee, diff, avail_order['zip_code'],self.client_data,avail_order['due'],common_db_data,self.portal_name,avail_order['address'])
+
+            # is_valid = zipcode_check(
+            #     avail_order['zipcode'],
+            #     avail_order['order_type'],
+            #     requesting_fee,
+            #     self.client_data,
+            #     self.portal_name
+            # )
+
+            if flag:
+                logging.info("Order passed criteria for quote.")
+                return avail_order, due_date, True
+            else:
+                logging.warning(" Counter criteria failed: {due_result}")
+                return avail_order, due_date, False
+
+        except Exception as ex:
+            logging.exception("Exception occurred in criteria_check_order_quote()")
+            return avail_order, "", False
+
             
     def login_pcv(self, username, password):
         try:

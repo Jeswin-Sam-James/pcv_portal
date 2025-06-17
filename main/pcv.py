@@ -53,97 +53,102 @@ def main():
                     init.client_data = client_data
                     order_received_time = datetime.datetime.now()
 
-                    if client_data and client_data['order_quote_status'] == 'OFF':  # Status must be OFF to accept directly
-                        if client_data['Status'] == 'Active':
-                            if 'New Order' not in subject:
-                                print(" Client is active")
+                    if client_data and client_data['Status'] == 'Active':
+                        if 'New Order' not in subject:
+                            print(" Client is active")
 
-                                if order_type == "new_order":
-                                    response_link, subject_details = init.extract_response_link_and_order(value)
+                            if order_type == "new_order":
+                                response_link, subject_details = init.extract_response_link_and_order(value)
 
-                                    if not subject_details:
-                                        print(" Could not extract order details. Skipping.")
-                                        continue
+                                if not subject_details:
+                                    print(" Could not extract order details. Skipping.")
+                                    continue
 
-                                    # to_accept, due_date, criteria_flag = init.criteria_check(subject_details)
-                                    criteria_flag = True
-                                    if criteria_flag:
-                                        is_logged_in, session, soup = init.ensure_logged_in()
+                                to_accept, due_date, criteria_flag = init.criteria_check_new_order(subject_details)
+                                # criteria_flag = True
+                                if criteria_flag:
+                                    is_logged_in, session, soup = init.ensure_logged_in()
 
-                                        if is_logged_in:
-                                            print(soup.prettify())
-                                            print(" Criteria matched. Attempting to accept...")
-                                            flag_check = init.accept_pcv_order(session, response_link, due_date, to_accept['price'])
+                                    if is_logged_in:
+                                        print(soup.prettify())
+                                        print(" Criteria matched. Attempting to accept...")
+                                        flag_check = init.accept_pcv_order(session, response_link, due_date, to_accept['price'])
 
 
-                                            if flag_check:
-                                                countered.append({
-                                                    'to_accept': to_accept,
-                                                    "due_date": due_date,
-                                                    "order_received_time": order_received_time
-                                                })
-                                            else:
-                                                ignored.append({
-                                                    'to_accept': to_accept,
-                                                    'ignoredmsg': 'Order Expired',
-                                                    'fee_portal': to_accept['price'],
-                                                    'client_data': client_data,
-                                                    'Address': to_accept['address'],
-                                                    "order_received_time": order_received_time
-                                                })
-                                    else:
-                                        print("Order criteria failed.")
-                                        ignored.append({
-                                            'to_accept': to_accept,
-                                            'ignoredmsg': due_date,
-                                            'fee_portal': to_accept['price'],
-                                            'client_data': client_data,
-                                            'Address': to_accept['address'],
-                                            "order_received_time": order_received_time
-                                        })
+                                        if flag_check:
+                                            countered.append({
+                                                'to_accept': to_accept,
+                                                "due_date": due_date,
+                                                "order_received_time": order_received_time
+                                            })
+                                        else:
+                                            ignored.append({
+                                                'to_accept': to_accept,
+                                                'ignoredmsg': 'Order Expired',
+                                                'fee_portal': to_accept['price'],
+                                                'client_data': client_data,
+                                                'Address': to_accept['address'],
+                                                "order_received_time": order_received_time
+                                            })
+                                else:
+                                    print("Order criteria failed.")
+                                    ignored.append({
+                                        'to_accept': to_accept,
+                                        'ignoredmsg': due_date,
+                                        'fee_portal': to_accept['price'],
+                                        'client_data': client_data,
+                                        'Address': to_accept['address'],
+                                        "order_received_time": order_received_time
+                                    })
 
-                                elif order_type == "counter_request":
+                            elif order_type == "counter_request":
+                                if client_data and client_data['order_quote_status'] == 'OFF':  # Status must be OFF to accept directly
+
                                     try:
                                         response_link, avail_order = init.extract_counter_response_link_and_order([mail_content, subject])
                                         
                                         if avail_order:
-                                            avail_order, due, _ = init.criteria_check(avail_order)
+                                            avail_order, due, criteria_flag  = init.criteria_check_order_quote(avail_order)
                                             print(f"Countering with: ${avail_order['price']} for Order ID: {avail_order['order_id']}")
-
-                                            #  Implement PCV counter submission here:
-                                            # success = init.send_counter(response_link, avail_order['price'], due)
-
-                                            write_to_db(client_data, str(datetime.datetime.now()), due, portal_name,
-                                                        avail_order['price'], avail_order['order_type'], avail_order['address'],
-                                                        "Countered", portal_name, avail_order['order_id'], subject, order_received_time)
+                                            
+                                            if criteria_flag:
+                                                print(f"Ready to submit fee: {avail_order['price']} for order {avail_order['order_id']}")
+                                                 # success = init.send_counter(response_link, avail_order['price'], due)
+                                                 
+                                                # write_to_db(client_data, str(datetime.datetime.now()), due, portal_name,
+                                                #         avail_order['price'], avail_order['order_type'], avail_order['address'],
+                                                #         "Countered", portal_name, avail_order['order_id'], subject, order_received_time)
+                                            else:
+                                                print("Counter order did not meet criteria.")
                                         else:
                                             print(" Could not extract counter order details.")
                                     except Exception as e:
                                         logging.exception("Exception in counter handling")
+                                else:
+                                  print(f"Skipping - client inactive or quote status is ON: {key}")
 
-                                # Handle ignored orders
-                                for ignore in ignored:
-                                    order_details = ignore['to_accept']
-                                    zipcode = order_details['zipcode'].split("-")[0] if '-' in order_details['zipcode'] else order_details['zipcode']
-                                    subject_line = f"Ignored Order!!! - {portal_name} - {ignore['ignoredmsg']}"
-                                    ignored_order(
-                                        ignore['Address'], order_details['order_type'], ignore['ignoredmsg'],
-                                        ignore['fee_portal'], ignore['client_data'], portal_name,
-                                        zipcode, subject_line, ignore['order_received_time']
-                                    )
-
-                            else:
-                                # Confirmed Order
-                                order_address = init.extract_confirmation_order_details(subject)
-                                counter_accepted_flag = init.check_if_counter_accepted(client_data, order_address, portal_name)
-                                print(f"Counter Accepted? {counter_accepted_flag}")
+                            # Handle ignored orders
+                            for ignore in ignored:
+                                order_details = ignore['to_accept']
+                                zipcode = order_details['zipcode'].split("-")[0] if '-' in order_details['zipcode'] else order_details['zipcode']
+                                subject_line = f"Ignored Order!!! - {portal_name} - {ignore['ignoredmsg']}"
+                                ignored_order(
+                                    ignore['Address'], order_details['order_type'], ignore['ignoredmsg'],
+                                    ignore['fee_portal'], ignore['client_data'], portal_name,
+                                    zipcode, subject_line, ignore['order_received_time']
+                                )
 
                         else:
-                            print(" Client is inactive.")
-                            inactive_inDB(client_data['Client_name'], portal_name)
+                            # Confirmed Order
+                            order_address = init.extract_confirmation_order_details(subject)
+                            counter_accepted_flag = init.check_if_counter_accepted(client_data, order_address, portal_name)
+                            print(f"Counter Accepted? {counter_accepted_flag}")
 
                     else:
-                        print(f"Skipping - client inactive or quote status is ON: {key}")
+                        print(" Client is inactive.")
+                        inactive_inDB(client_data['Client_name'], portal_name)
+
+                    
 
                 time.sleep(randint(1, 2))
 
