@@ -104,7 +104,7 @@ class pcv:
                                     # Store in dictionary
                                     unread_new_emails[to_address] = [mail_content, msg['subject']]
                                     
-                            return unread_new_emails
+                        return unread_new_emails
         except Exception as ex:
             
             exception_mail_send(self.portal_name, self.portal_name, ex)
@@ -271,7 +271,7 @@ class pcv:
                 zipcode_in_db = self.client_data['Int_Zipcode']
                 return requesting_fee, zipcode_in_db, True
             
-            return None, None, True #****change to true 
+            return None, None, False 
             
         except Exception as e:
             
@@ -335,7 +335,7 @@ class pcv:
             avail_order['price'] = requesting_fee
             
             zipcode_in_db={zipcode: True for zipcode in zipcode_in_db.split(',')}
-            due,fee_portal,flag=criteria_with_params(requesting_fee,zipcode_in_db,requesting_fee, diff, avail_order['zip_code'],self.client_data,avail_order['due'],common_db_data,self.portal_name,avail_order['address'])
+            due,fee_portal,flag=criteria_with_params(requesting_fee,zipcode_in_db,requesting_fee, diff, avail_order['zipcode'],self.client_data,avail_order['due'],common_db_data,self.portal_name,avail_order['address'])
 
             # is_valid = zipcode_check(
             #     avail_order['zipcode'],
@@ -479,27 +479,69 @@ class pcv:
             session = requests.Session()
             resp = session.get(response_link)
             soup = BeautifulSoup(resp.content, 'html.parser')
+            
+            
+            page_title = soup.find("span", {"id": "dvQuote_lblActionMsg"})
+            property_address = soup.find("span", string="Property Address")
+            property_name = soup.find("span", string="Product Name")
 
-            # TODO: You must inspect the HTML form for field names
-            token = soup.find('input', {'name': '__RequestVerificationToken'})['value']
-            order_id = soup.find('input', {'name': 'OrderId'})['value']
+            logging.info("📝 Fee Quote Page Loaded")
+            print("📝 Fee Quote Page Loaded")
+            if page_title:
+                print("page title", page_title)
+                logging.info(f"Page Title: {page_title.text.strip()}")
+            if property_address:
+                print("property address",property_address)
+                address_val = property_address.find_next_sibling("span").text.strip()
+                print("property address",address_val)
+                logging.info(f"Property Address: {address_val}")
+            if property_name:
+                product_val = property_name.find_next_sibling("span").text.strip()
+                print("Product Name",product_val)
+                logging.info(f"Product Name: {product_val}")
+                
+
+            viewstate = soup.find("input", {"name": "__VIEWSTATE"})["value"]
+            viewstategen = soup.find("input", {"name": "__VIEWSTATEGENERATOR"})["value"]
+            eventvalidation = soup.find("input", {"name": "__EVENTVALIDATION"})["value"]
+
+            now = datetime.datetime.now()
+            due_datetime = (now + datetime.timedelta(hours=25)).strftime("%m/%d/%Y %I:%M %p")
+            expire_datetime = (now + datetime.timedelta(hours=48)).strftime("%m/%d/%Y %I:%M %p")
+
 
             data = {
-                '__RequestVerificationToken': token,
-                'OrderId': order_id,
-                'Fee': fee,
-                'DueDate': due_date,
-                'Notes': 'Submitting counter offer automatically.'
+                "__EVENTTARGET": "",
+                "__EVENTARGUMENT": "",
+                "__LASTFOCUS": "",
+                "__VIEWSTATE": viewstate,
+                "__VIEWSTATEGENERATOR": viewstategen,
+                "__EVENTVALIDATION": eventvalidation,
+
+                "txtDesiredFee": str(fee),
+                "ddQuoteReason": "5",  
+                "txtDueDateTime": due_datetime,
+                "txtExpiredDateTime": expire_datetime,
+
+                # "btnSubmit": "Submit Fee Quote"
+            }
+            print("The free quoate submitted data",data)
+
+            headers = {
+                "Content-Type": "application/x-www-form-urlencoded",
+                "User-Agent": "Mozilla/5.0",
+                "Referer": response_link,
             }
 
             post_url = response_link.split('?')[0]
-            result = session.post(post_url, data=data)
+            result = session.post(post_url, data=data, headers=headers)
+            print("the quote order :",result)
 
-            if result.status_code == 200 and "success" in result.text.lower():
-                logging.info(" Counter offer submitted.")
+            if result.status_code == 200 and "Fee Quote Submitted" in result.text:
+                logging.info("Counter offer submitted successfully.")
                 return True
             else:
-                logging.warning(" Counter offer submission failed.")
+                logging.warning("Counter offer submission may have failed.")
                 return False
 
         except Exception as e:

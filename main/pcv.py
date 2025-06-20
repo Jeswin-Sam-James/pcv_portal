@@ -40,7 +40,9 @@ def main():
             
 
             if orders_found:
+                
                 for key, value in orders_found.items():
+                    key = key.replace("<", "").replace(">", "").strip()
                     mail_content, subject = value
                     order_type = classify_order_type(subject)
                     print(f"\n Processing: {order_type.upper()} | Subject: {subject} | Email: {key}")
@@ -102,7 +104,7 @@ def main():
                                     })
 
                             elif order_type == "counter_request":
-                                if client_data and client_data['order_quote_status'] == 'OFF':  # Status must be OFF to accept directly
+                                if client_data and client_data['order_quote_status'] == 'ON':  
 
                                     try:
                                         response_link, avail_order = init.extract_counter_response_link_and_order([mail_content, subject])
@@ -113,7 +115,11 @@ def main():
                                             
                                             if criteria_flag:
                                                 print(f"Ready to submit fee: {avail_order['price']} for order {avail_order['order_id']}")
-                                                 # success = init.send_counter(response_link, avail_order['price'], due)
+                                                countered.append({'countered_order': avail_order, 'due_date' : due,  })
+                                                print(countered)
+
+                                                success = init.send_counter(response_link, avail_order['price'], due)
+                                                print("the sucess msg of fee quoate", success)
                                                  
                                                 # write_to_db(client_data, str(datetime.datetime.now()), due, portal_name,
                                                 #         avail_order['price'], avail_order['order_type'], avail_order['address'],
@@ -132,11 +138,11 @@ def main():
                                 order_details = ignore['to_accept']
                                 zipcode = order_details['zipcode'].split("-")[0] if '-' in order_details['zipcode'] else order_details['zipcode']
                                 subject_line = f"Ignored Order!!! - {portal_name} - {ignore['ignoredmsg']}"
-                                ignored_order(
-                                    ignore['Address'], order_details['order_type'], ignore['ignoredmsg'],
-                                    ignore['fee_portal'], ignore['client_data'], portal_name,
-                                    zipcode, subject_line, ignore['order_received_time']
-                                )
+                                # ignored_order(
+                                #     ignore['Address'], order_details['order_type'], ignore['ignoredmsg'],
+                                #     ignore['fee_portal'], ignore['client_data'], portal_name,
+                                #     zipcode, subject_line, ignore['order_received_time']
+                                # )
 
                         else:
                             # Confirmed Order
@@ -146,7 +152,7 @@ def main():
 
                     else:
                         print(" Client is inactive.")
-                        inactive_inDB(client_data['Client_name'], portal_name)
+                        # inactive_inDB(client_data['Client_name'], portal_name)
 
                     
 
