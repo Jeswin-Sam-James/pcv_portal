@@ -16,6 +16,7 @@ from stdlib.utility import cursorexec,ignored_message,exception_mail_send,client
 import html
 import requests
 from email.utils import parseaddr
+from stdlib.test_utility import test_exception_mail_send
 
 email_creds = email_cred()
 
@@ -28,41 +29,29 @@ class pcv:
         self.session = requests.Session()
 
     
-
-    #check for any Unseen emails
     def checkorder_mail(self):
         try:
-            # Login to Gmail
             conn = login_into_gmail('murcorpcv@gmail.com', 'ekmw pldz tdhw zkkp')
-            conn.select('inbox')
-
-            # Search without UNSEEN: you only want a specific mail, read or unread
+            conn.select('inboxx')
             retcode, data = conn.search(
                 None,
                 '(UNSEEN FROM "@pcvmurcor.com" OR SUBJECT "new BPO order from PCV Murcor" SUBJECT "Fee Quote Request on Order")'
             )
 
             print("The status is", retcode)
-
-
             str_list = list(filter(None, data[0].decode().split(' ')))
             logging.info('No: of unread messages Applied valuation: {}'.format(len(str_list)))
-            
-            # Dictionary to store to-addresses and content
             unread_new_emails = {}  
 
             if retcode == 'OK':
                 for num in data[0].decode().split(' '):
                     if num:
                         type, data = conn.fetch(num, '(RFC822)' )
-                        
                         for response_part in data:
                             if isinstance(response_part, tuple):
                                 msg = email.message_from_string(response_part[1].decode('utf-8'))
                                 # to_address = "littlerockbpo@bangrealty.com"
                                 to_address =  msg['To']
-                        
-                                # Get email content
                                 mail_content = ""
                                 for part in msg.walk():
                                     content_type = part.get_content_type()
@@ -75,7 +64,6 @@ class pcv:
                                     
                                     elif content_type == 'multipart/alternative':
                                         
-                                        # Handle alternative content types (e.g., plain text and HTML)
                                         for alternative_part in part.get_payload():
                                             
                                             if alternative_part.get_content_type() == 'text/plain':
@@ -87,7 +75,6 @@ class pcv:
                                     elif content_type == 'multipart/mixed': 
                                     # or content_type == 'multipart/related':
                                         
-                                        # Handle mixed or related content types (e.g., attachments and embedded images)
                                         for mixed_part in part.get_payload():
                                             
                                             if mixed_part.get_content_type() == 'text/plain':
@@ -96,18 +83,16 @@ class pcv:
                                             elif mixed_part.get_content_type() == 'text/html':
                                                 mail_content += mixed_part.get_payload(decode=True).decode(mixed_part.get_content_charset())
                                     else:
-                                        # Handle other content types as needed
                                         print('other content type',content_type)
                                 
                                 # if 'Please provide us with a fee and turn time for this' in mail_content or ('Click the following link to view the details of the order:' in mail_content and 'New Order' in msg['subject']):
                                     
-                                    # Store in dictionary
                                     unread_new_emails[to_address] = [mail_content, msg['subject']]
                                     
                         return unread_new_emails
         except Exception as ex:
-            
-            exception_mail_send(self.portal_name, self.portal_name, ex)
+            test_exception_mail_send(self.portal_name, self.portal_name, ex)
+            # exception_mail_send(self.portal_name, self.portal_name, ex)
             logging.info(f"An exception while checking for new order mail notification {ex}")
 
 

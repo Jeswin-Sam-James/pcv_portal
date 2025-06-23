@@ -37,28 +37,28 @@ def main():
 
             orders_found = init.checkorder_mail()
             print(orders_found)
-            
-
+    
             if orders_found:
                 
                 for key, value in orders_found.items():
+                    logging.info(f'subject line : {value[1]}')
                     key = key.replace("<", "").replace(">", "").strip()
                     mail_content, subject = value
                     order_type = classify_order_type(subject)
                     print(f"\n Processing: {order_type.upper()} | Subject: {subject} | Email: {key}")
-
+                    new_order = []
                     countered = []
                     ignored = []
 
-                    # Fetch client settings
                     client_data = cursorexec("order_acceptance", "SELECT", f"""SELECT * FROM `pcv` WHERE `Email_address` = '{key}' LIMIT 1""")
                     init.client_data = client_data
                     order_received_time = datetime.datetime.now()
 
                     if client_data and client_data['Status'] == 'Active':
-                        if 'New Order' not in subject:
-                            print(" Client is active")
+                        logging.info(f"%s acceptor for %s", portal_name, client_data['Client_name'])
 
+                        if 'New Order' not in subject:
+                            
                             if order_type == "new_order":
                                 response_link, subject_details = init.extract_response_link_and_order(value)
 
@@ -67,18 +67,20 @@ def main():
                                     continue
 
                                 to_accept, due_date, criteria_flag = init.criteria_check_new_order(subject_details)
+                                logging.info(f"After criteria check : to_accept = {to_accept}, due_date : {due_date}")
+
                                 # criteria_flag = True
                                 if criteria_flag:
                                     is_logged_in, session, soup = init.ensure_logged_in()
 
                                     if is_logged_in:
                                         print(soup.prettify())
+                                        logging.info(f"Criteria matched. Attempting to accept...")
                                         print(" Criteria matched. Attempting to accept...")
                                         flag_check = init.accept_pcv_order(session, response_link, due_date, to_accept['price'])
 
-
                                         if flag_check:
-                                            countered.append({
+                                            new_order.append({
                                                 'to_accept': to_accept,
                                                 "due_date": due_date,
                                                 "order_received_time": order_received_time
